@@ -11,6 +11,9 @@
 # phpstorm project files
 .idea
 
+# visual studio code project files
+.vscode
+
 # phpunit
 phpunit.phar
 .phpunit.result.cache

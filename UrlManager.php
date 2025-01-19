@@ -231,14 +231,14 @@ class UrlManager extends BaseUrlManager
     /**
      * @inheritdoc
      */
-    public function createUrl($params)
+    public function createAbsoluteUrl($params, $scheme = null)
     {
         if ($this->ignoreLanguageUrlPatterns) {
             $params = (array) $params;
             $route = trim($params[0], '/');
             foreach ($this->ignoreLanguageUrlPatterns as $pattern => $v) {
                 if (preg_match($pattern, $route)) {
-                    return parent::createUrl($params);
+                    return parent::createAbsoluteUrl($params);
                 }
             }
         }
@@ -254,7 +254,7 @@ class UrlManager extends BaseUrlManager
                 unset($params[$this->languageParam]);
             }
 
-            $url = parent::createUrl($params);
+            $url = parent::createAbsoluteUrl($params);
 
             if (
                 // Only add language if it's not empty and ...
@@ -278,60 +278,16 @@ class UrlManager extends BaseUrlManager
                 }
 
                 // Calculate the position where the language code has to be inserted
-                // depending on the showScriptName and baseUrl configuration:
-                //
-                //  - /foo/bar -> /de/foo/bar
-                //  - /base/foo/bar -> /base/de/foo/bar
-                //  - /index.php/foo/bar -> /index.php/de/foo/bar
-                //  - /base/index.php/foo/bar -> /base/index.php/de/foo/bar
-                //
-                $prefix = $this->showScriptName ? $this->getScriptUrl() : $this->getBaseUrl();
-                $insertPos = strlen($prefix);
-
-                // Remove any trailing slashes for root URLs
-                if ($this->suffix !== '/') {
-                    if (count($params) === 1 ) {
-                        // / -> ''
-                        // /base/ -> /base
-                        // /index.php/ -> /index.php
-                        // /base/index.php/ -> /base/index.php
-                        if ($url === $prefix . '/') {
-                            $url = rtrim($url, '/');
-                        }
-                    } elseif (strncmp($url, $prefix . '/?', $insertPos + 2) === 0) {
-                        // /?x=y -> ?x=y
-                        // /base/?x=y -> /base?x=y
-                        // /index.php/?x=y -> /index.php?x=y
-                        // /base/index.php/?x=y -> /base/index.php?x=y
-                        $url = substr_replace($url, '', $insertPos, 1);
-                    }
+                if (preg_match("#^(https?:\/\/)#i", $url, $m)) {
+                    $url = substr_replace($url, $language . '.', strlen($m[1]), 0);
                 }
 
-                // If we have an absolute URL the length of the host URL has to
-                // be added:
-                //
-                //  - http://www.example.com
-                //  - http://www.example.com?x=y
-                //  - http://www.example.com/foo/bar
-                //
-                if (strpos($url, '://')!==false) {
-                    // Host URL ends at first '/' or '?' after the schema
-                    if (($pos = strpos($url, '/', 8))!==false || ($pos = strpos($url, '?', 8))!==false) {
-                        $insertPos += $pos;
-                    } else {
-                        $insertPos += strlen($url);
-                    }
-                }
-                if ($insertPos > 0) {
-                    return substr_replace($url, '/' . $language, $insertPos, 0);
-                } else {
-                    return '/' . $language . $url;
-                }
+                return $url;
             } else {
                 return $url;
             }
         } else {
-            return parent::createUrl($params);
+            return parent::createAbsoluteUrl($params);
         }
     }
 
@@ -345,7 +301,7 @@ class UrlManager extends BaseUrlManager
      */
     protected function processLocaleUrl($normalized)
     {
-        $pathInfo = $this->_request->getPathInfo();
+        $hostInfo = $this->_request->getHostInfo();
         $parts = [];
         foreach ($this->languages as $k => $v) {
             $value = is_string($k) ? $k : $v;
@@ -367,9 +323,9 @@ class UrlManager extends BaseUrlManager
             return $la < $lb ? 1 : -1;
         });
         $pattern = implode('|', $parts);
-        if (preg_match("#^($pattern)\b(/?)#i", $pathInfo, $m)) {
-            $this->_request->setPathInfo(mb_substr($pathInfo, mb_strlen($m[1].$m[2])));
-            $code = $m[1];
+        if (preg_match("#^(https?:\/\/)(($pattern)\.)#i", $hostInfo, $m)) {
+            $this->_request->setHostInfo(substr_replace($hostInfo, '', strlen($m[1]), mb_strlen($m[2])));
+            $code = $m[3];
             if (isset($this->languages[$code])) {
                 // Replace alias with language code
                 $language = $this->languages[$code];
@@ -618,7 +574,7 @@ class UrlManager extends BaseUrlManager
         }
         // See Yii Issues #8291 and #9161:
         $params = [$route] + $params + $this->_request->getQueryParams();
-        $url = $this->createUrl($params);
+        $url = $this->createAbsoluteUrl($params);
         // Required to prevent double slashes on generated URLs
         if ($this->suffix === '/' && $route === '' && count($params) === 1) {
             $url = rtrim($url, '/').'/';
